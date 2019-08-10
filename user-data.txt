@@ -1,0 +1,62 @@
+#!/bin/bash
+# install the necessary tools
+sudo yum install docker httpd-tools git -y
+
+# add new group and add centos user
+sudo groupadd docker
+sudo usermod -aG docker centos
+
+# enable docker at startup
+sudo systemctl enable docker.service
+sudo systemctl start docker.service
+
+# install docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/download/1.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# download resources from git
+cd /home/centos/
+git clone https://github.com/claesmathias/lightsail-fbctf.git
+git clone https://github.com/facebook/fbctf
+
+# set docker-compose environment variables
+cat <<EOF >/home/centos/lightsail-fbctf/.env
+HOST_IP=$(hostname --ip-address)
+EMAIL=mail@mydomain.com
+URL=mydomain.com
+SUBDOMAINS=www
+EXTRA_DOMAINS=
+TZ=Europe/Brussels
+EOF
+
+# set noip variables
+cat <<EOF >/home/centos/lightsail-fbctf/noip.conf
+# This is an email address
+USERNAME='mail@mydomain.com'
+PASSWORD='*****************'
+# Your hostname, group name, or a comma-delimited list of a mix of them.
+DOMAINS='-.mydomain.com,www.mydomain.com'
+# Examples: 5 m, 5 h, 5 d. Minimum is 5 minutes.
+INTERVAL='5m'
+EOF
+
+# set permissions
+sudo chown -R centos:centos /home/centos/lightsail-fbctf/
+sudo chown -R centos:centos /home/centos/fbctf/
+
+# set selinux permissions
+sudo chcon -Rt svirt_sandbox_file_t /home/centos
+
+# generate random password
+PASSWORD=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo '')
+
+# set portainer admin passwod
+echo -n $PASSWORD > /home/centos/lightsail-fbctf/portainer_secret.txt
+
+# build fbctf
+cd /home/centos/fbctf
+sudo docker build --build-arg MODE=prod -t="fbctf_in_prod" .
+
+# start and stop docker containers
+cd /home/centos/lightsail-fbctf/
+/usr/local/bin/docker-compose up -d
